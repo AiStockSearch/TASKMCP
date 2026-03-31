@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -17,24 +16,38 @@ import (
 type Service struct {
 	repo       *Repo
 	tasksSvc   *tasks.Service
+	projects   ProjectsResolver
 	ghApp      *GitHubApp
 	httpClient *http.Client
 }
 
-func NewService(repo *Repo, tasksSvc *tasks.Service, ghApp *GitHubApp, httpClient *http.Client) *Service {
-	return &Service{repo: repo, tasksSvc: tasksSvc, ghApp: ghApp, httpClient: httpClient}
+type ProjectsResolver interface {
+	Resolve(ctx context.Context, repoKey string) (uuid.UUID, error)
 }
 
-func (s *Service) GetStoredLink(ctx context.Context, entityType string, entityID uuid.UUID) (*LinkDTO, error) {
-	return s.repo.GetLink(ctx, entityType, entityID)
+func NewService(repo *Repo, tasksSvc *tasks.Service, projects ProjectsResolver, ghApp *GitHubApp, httpClient *http.Client) *Service {
+	return &Service{repo: repo, tasksSvc: tasksSvc, projects: projects, ghApp: ghApp, httpClient: httpClient}
 }
 
-func (s *Service) CreateIssueForTask(ctx context.Context, taskID uuid.UUID, owner, repo, titleOverride, bodyMode string) (*LinkDTO, error) {
-	if link, err := s.repo.GetLink(ctx, "task", taskID); err == nil && link != nil {
+func (s *Service) GetStoredLink(ctx context.Context, repoKey string, entityType string, entityID uuid.UUID) (*LinkDTO, error) {
+	projectID, err := s.projects.Resolve(ctx, repoKey)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetLink(ctx, projectID, entityType, entityID)
+}
+
+func (s *Service) CreateIssueForTask(ctx context.Context, repoKey string, taskID uuid.UUID, owner, repo, titleOverride, bodyMode string) (*LinkDTO, error) {
+	projectID, err := s.projects.Resolve(ctx, repoKey)
+	if err != nil {
+		return nil, err
+	}
+
+	if link, err := s.repo.GetLink(ctx, projectID, "task", taskID); err == nil && link != nil {
 		return link, nil
 	}
 
-	task, ok, err := s.tasksSvc.GetTask(ctx, taskID)
+	task, ok, err := s.tasksSvc.GetTask(ctx, repoKey, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -42,26 +55,9 @@ func (s *Service) CreateIssueForTask(ctx context.Context, taskID uuid.UUID, owne
 		return nil, fmt.Errorf("task not found")
 	}
 
-	issueTitle := task.Title
-	if strings.TrimSpace(titleOverride) != "" {
-		issueTitle = strings.TrimSpace(titleOverride)
-	}
-
-	body := ""
-	if bodyMode == "" {
-		bodyMode = "from_task_description"
-	}
-	switch bodyMode {
-	case "from_task_description":
-		body = strings.TrimSpace(task.Description)
-		if body != "" {
-			body += "\n\n"
-		}
-		body += fmt.Sprintf("Vault task: %s", task.ID)
-	case "minimal":
-		body = fmt.Sprintf("Vault task: %s", task.ID)
-	default:
-		return nil, fmt.Errorf("invalid body_mode (expected from_task_description|minimal)")
+	issueTitle, body, err := buildIssuePayload(task.Title, task.Description, task.ID, titleOverride, bodyMode)
+	if err != nil {
+		return nil, err
 	}
 
 	token, err := s.ghApp.InstallationToken(ctx, s.httpClient)
@@ -121,7 +117,7 @@ func (s *Service) CreateIssueForTask(ctx context.Context, taskID uuid.UUID, owne
 		IssueNumber: issueResp.Number,
 		IssueURL:    issueResp.HTMLURL,
 	}
-	if err := s.repo.InsertLinkIfAbsent(ctx, link); err != nil {
+	if err := s.repo.InsertLinkIfAbsent(ctx, projectID, link); err != nil {
 		return nil, err
 	}
 

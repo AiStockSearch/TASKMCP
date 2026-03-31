@@ -119,6 +119,7 @@ func RegisterTools(s *server.MCPServer, a *app.App) {
 		mcp.NewTool(
 			"github_get_issue_link",
 			mcp.WithDescription("Get a stored GitHub issue link for an entity from Postgres (no GitHub API call)."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
 			mcp.WithString("entity_type", mcp.Required(), mcp.Description("epic|requirement|task")),
 			mcp.WithString("entity_id", mcp.Required(), mcp.Description("Entity UUID")),
 		),
@@ -128,6 +129,7 @@ func RegisterTools(s *server.MCPServer, a *app.App) {
 		mcp.NewTool(
 			"github_create_issue_for_task",
 			mcp.WithDescription("Create a GitHub issue for a task using GitHub App auth, and store the link in Postgres."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
 			mcp.WithString("task_id", mcp.Required(), mcp.Description("Task UUID")),
 			mcp.WithString("repo_owner", mcp.Required(), mcp.Description("GitHub repository owner/org")),
 			mcp.WithString("repo_name", mcp.Required(), mcp.Description("GitHub repository name")),
@@ -135,6 +137,43 @@ func RegisterTools(s *server.MCPServer, a *app.App) {
 			mcp.WithString("body_mode", mcp.Description("Optional: from_task_description|minimal (default from_task_description)")),
 		),
 		a.GHTools.CreateIssueForTask,
+	)
+
+	// knowledge base (pgvector)
+	s.AddTool(
+		mcp.NewTool(
+			"kb_upsert_document_chunks",
+			mcp.WithDescription("Upsert a document and its embedded chunks into Postgres pgvector KB."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("source_type", mcp.Description("Optional: markdown|decision|file (default markdown)")),
+			mcp.WithString("source_path", mcp.Required(), mcp.Description("Source path or identifier (e.g. README.md)")),
+			mcp.WithString("title", mcp.Description("Optional: document title")),
+			mcp.WithString("full_text", mcp.Required(), mcp.Description("Full raw text used for hashing/dedup")),
+			mcp.WithArray("chunks", mcp.Description("Chunks with embeddings: [{chunk_index, content, embedding, metadata}]")),
+		),
+		a.KBTools.UpsertDocumentChunks,
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"kb_search_context",
+			mcp.WithDescription("Semantic search over stored chunks using a query embedding vector."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithArray("query_embedding", mcp.Description("float32 embedding vector"), mcp.WithNumberItems()),
+			mcp.WithNumber("top_k", mcp.Description("Optional: default 8, max 50")),
+		),
+		a.KBTools.SearchContext,
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"kb_chunk_markdown",
+			mcp.WithDescription("Chunk Markdown into retrieval-friendly sections (headings-aware), returning chunks + metadata. No embeddings generated."),
+			mcp.WithString("text", mcp.Required(), mcp.Description("Markdown text to chunk")),
+			mcp.WithNumber("max_chars", mcp.Description("Optional: default 3000")),
+			mcp.WithNumber("overlap_chars", mcp.Description("Optional: default 300")),
+		),
+		a.KBTools.ChunkMarkdown,
 	)
 }
 

@@ -168,7 +168,7 @@ func (r *Repo) List(ctx context.Context, opt ListOptions) ([]TaskRow, error) {
 
 	orderBy := "priority ASC, id ASC"
 	if opt.Order == "created_at" {
-		orderBy = "id ASC"
+		orderBy = "created_at ASC, id ASC"
 	}
 
 	query := `

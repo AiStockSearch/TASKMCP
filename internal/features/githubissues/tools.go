@@ -3,6 +3,7 @@ package githubissues
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -20,9 +21,24 @@ func NewTools(svc *Service, db *postgres.DBGuard) *Tools {
 	return &Tools{svc: svc, db: db}
 }
 
+func repoKeyFromReq(req mcp.CallToolRequest) (string, *mcp.CallToolResult) {
+	repoKey := strings.TrimSpace(req.GetString("repo_key", ""))
+	if repoKey == "" {
+		repoKey = strings.TrimSpace(os.Getenv("DEFAULT_REPO_KEY"))
+	}
+	if repoKey == "" {
+		return "", mcp.NewToolResultError("missing repo_key (or set DEFAULT_REPO_KEY env var)")
+	}
+	return repoKey, nil
+}
+
 func (t *Tools) GetIssueLink(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.db.Ensure(ctx); err != nil {
 		return mcputil.Err(err.Error())
+	}
+	repoKey, r := repoKeyFromReq(req)
+	if r != nil {
+		return r, nil
 	}
 	entityType, err := req.RequireString("entity_type")
 	if err != nil {
@@ -37,7 +53,7 @@ func (t *Tools) GetIssueLink(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return r, nil
 	}
 
-	link, err := t.svc.GetStoredLink(ctx, entityType, entityID)
+	link, err := t.svc.GetStoredLink(ctx, repoKey, entityType, entityID)
 	if err != nil {
 		return mcputil.Err(err.Error())
 	}
@@ -50,6 +66,10 @@ func (t *Tools) GetIssueLink(ctx context.Context, req mcp.CallToolRequest) (*mcp
 func (t *Tools) CreateIssueForTask(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.db.Ensure(ctx); err != nil {
 		return mcputil.Err(err.Error())
+	}
+	repoKey, r := repoKeyFromReq(req)
+	if r != nil {
+		return r, nil
 	}
 	if err := t.svc.ghApp.ConfigError(); err != nil {
 		return mcputil.Err(err.Error())
@@ -76,7 +96,7 @@ func (t *Tools) CreateIssueForTask(ctx context.Context, req mcp.CallToolRequest)
 	titleOverride := strings.TrimSpace(req.GetString("title_override", ""))
 	bodyMode := strings.TrimSpace(req.GetString("body_mode", "from_task_description"))
 
-	link, err := t.svc.CreateIssueForTask(ctx, taskID, owner, repo, titleOverride, bodyMode)
+	link, err := t.svc.CreateIssueForTask(ctx, repoKey, taskID, owner, repo, titleOverride, bodyMode)
 	if err != nil {
 		return mcputil.Err(err.Error())
 	}

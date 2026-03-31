@@ -114,7 +114,7 @@ func (s *Service) ListTasks(ctx context.Context, repoKey string, in ListInput) (
 	}
 
 	if in.IncludeFiles && len(ids) > 0 {
-		filesByTask, err := s.repo.FilesByTaskIDs(ctx, ids)
+		filesByTask, err := s.repo.FilesByTaskIDs(ctx, projectID, ids)
 		if err != nil {
 			return nil, err
 		}
