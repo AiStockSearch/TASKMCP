@@ -33,8 +33,10 @@ orchestrator-up:
 	POSTGRES_HOST_PORT=$(POSTGRES_HOST_PORT) REDIS_HOST_PORT=$(REDIS_HOST_PORT) \
 		env -u WEBHOOK_SECRET docker compose --profile orchestrator up -d --build orchestrator-api orchestrator-worker
 
-# Как в compose по умолчанию. Случайный `export WEBHOOK_SECRET` в shell не подхватывается — только аргумент make (им выше приоритет). Свой секрет: `make apply-plan-bundle WEBHOOK_SECRET='…'`.
-WEBHOOK_SECRET := dev-change-me
+# Значение из корневого `.env`, иначе dev-change-me (как у docker compose для оркестратора).
+# Используем `:=`, не `?=`: иначе случайный `export WEBHOOK_SECRET=…` в shell перебивает .env (в т.ч. плейсхолдер вроде «ваш-секрет»).
+# Явная передача всё ещё работает: `make apply-plan-bundle WEBHOOK_SECRET='…'` (приоритет над Makefile).
+WEBHOOK_SECRET := $(shell val=$$(grep -E '^WEBHOOK_SECRET=' .env 2>/dev/null | sed 's/^WEBHOOK_SECRET=//' | tr -d '\r'); echo "$${val:-dev-change-me}")
 
 # Отправить PlanBundle в оркестратор (запущенный orchestrator-api, см. README)
 PLAN_BUNDLE_FILE ?= examples/planbundle_rn_auth.json

@@ -1,0 +1,213 @@
+{
+  "repo_key": "acme/mobile-app",
+  "requirement": {
+    "title": "Чат с LLM: задачи, напоминания и расписание из естественного языка (RN Expo + бэкенд)",
+    "status": "todo",
+    "spec_json": {
+      "platform": "react-native",
+      "expo": true,
+      "navigation": {
+        "library": "@react-navigation/native",
+        "pattern": "stack",
+        "expo_router": false,
+        "notes": "Отдельный экран чата в дереве навигации; без Expo Router."
+      },
+      "product_summary": "Пользователь ведёт диалог; сервер извлекает намерения и слоты (действие, контакт, даты, относительное время), нормализует формулировки, пишет в свою БД и ставит задачи в планировщик. Поддерживаются запросы вроде списка задач на сегодня и добавление напоминаний с уточняющими репликами по ходу беседы.",
+      "llm": {
+        "role": "Структурирование намерений и ответ пользователю; ключи API только на сервере.",
+        "providers_pluggable": [
+          "gemini",
+          "other"
+        ],
+        "structured_output": "JSON Schema / function calling: intent, slots, confidence, missing_slots, assistant_reply."
+      },
+      "intents_mvp": [
+        {
+          "name": "tasks.list",
+          "description": "Показать задачи/напоминания на дату (например сегодня)."
+        },
+        {
+          "name": "reminder_or_task.create",
+          "description": "Создать напоминание или задачу; слоты: action, contact_ref, topic, anchor_event_date, schedule (now | absolute | relative | offset_from_event)."
+        },
+        {
+          "name": "conversation.continue",
+          "description": "Дозаполнение черновика намерения из follow-up реплики (draft session)."
+        }
+      ],
+      "backend_responsibilities": [
+        "Аутентификация пользователя; session_id / conversation_id.",
+        "Хранение истории сообщений и нормализованных команд.",
+        "Черновик намерения (draft) с TTL для многоходовых уточнений.",
+        "Планировщик: отложенные напоминания и cron-подобные правила (персистентная очередь, воркер).",
+        "Интеграции HTTP к внешним API — за фичефлагами и секретами на сервере."
+      ],
+      "api_contract_sketch": {
+        "POST /v1/chat/messages": {
+          "request": {
+            "conversation_id": "uuid | null (создать новую)",
+            "text": "string",
+            "client_timezone": "IANA",
+            "request_id": "uuid для трассировки"
+          },
+          "response": {
+            "message_id": "uuid",
+            "assistant_text": "string",
+            "applied_actions": [
+              {
+                "type": "task_created | reminder_scheduled | tasks_listed | clarification_needed",
+                "payload": "object"
+              }
+            ],
+            "draft": {
+              "active": "boolean",
+              "missing_slots": [
+                "string"
+              ]
+            }
+          }
+        }
+      },
+      "client_responsibilities": [
+        "Экран чата: список сообщений, ввод, индикатор загрузки, ошибки сети.",
+        "Передача таймзоны устройства.",
+        "Никаких секретов LLM в приложении."
+      ],
+      "definition_of_done": [
+        "Пользователь может отправить сообщение и получить ответ ассистента.",
+        "Запрос вида «задачи на сегодня» возвращает данные из БД пользователя (не выдуманные пункты).",
+        "Создание напоминания из диалога создаёт запись и событие в планировщике после валидации слотов; при нехватке данных — одно уточнение без лишних полей формы.",
+        "История беседы сохраняется и подгружается при открытии экрана.",
+        "Ключи LLM используются только на сервере."
+      ],
+      "non_goals": [
+        "Expo Router",
+        "Голосовой ввод на первом этапе",
+        "Полноценная замена психотерапии или чтение чужих мыслей по переписке пользователя"
+      ],
+      "safety_notes": [
+        "Для деликатных тем — нейтральный тон, дисклеймер, при необходимости направление к специалистам; не хранить лишнюю PII в логах."
+      ]
+    }
+  },
+  "epic": {
+    "mode": "create_or_skip",
+    "title": "Conversational Task Assistant MVP",
+    "description": "Чат + LLM на бэкенде + БД + планировщик; клиент Expo RN со Stack Navigator",
+    "status": "open"
+  },
+  "tasks": [
+    {
+      "title": "Зафиксировать API и DTO чата (сообщение, ответ, draft, applied_actions)",
+      "description": "OpenAPI или документ контракта; модели запроса/ответа; коды ошибок; идempotency request_id.",
+      "priority": 10,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "docs/api/chat-messages.md",
+        "apps/mobile/src/api/chatTypes.ts"
+      ]
+    },
+    {
+      "title": "Бэкенд: адаптер LLM и парсинг структурированного намерения",
+      "description": "Вызов провайдера (Gemini и др.), системный промпт, JSON Schema / tools; валидация; маппинг в internal intents.",
+      "priority": 20,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "internal/chat/llm_adapter.go",
+        "internal/chat/intent_schema.json"
+      ]
+    },
+    {
+      "title": "Бэкенд: репозитории диалогов, сообщений и draft-сессий",
+      "description": "Таблицы/migrations: conversations, messages, intent_drafts (TTL); привязка к user_id; загрузка контекста для LLM.",
+      "priority": 30,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "migrations/NNNN_chat.up.sql",
+        "internal/chat/repo.go"
+      ]
+    },
+    {
+      "title": "Бэкенд: домен задач/напоминаний и планировщик",
+      "description": "CRUD задач пользователя; выборка на дату; постановка отложенных jobs; воркер; таймзона пользователя.",
+      "priority": 40,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "internal/tasks/service.go",
+        "internal/scheduler/worker.go"
+      ]
+    },
+    {
+      "title": "Бэкенд: HTTP handler POST /v1/chat/messages и склейка use-case",
+      "description": "Оркестрация: сохранить вход → LLM → выполнить действия или вернуть clarification → сохранить ответ.",
+      "priority": 50,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "internal/chat/handler.go",
+        "internal/chat/service.go"
+      ]
+    },
+    {
+      "title": "RN: экран чата и API-клиент",
+      "description": "Список сообщений, поле ввода, отправка, отображение applied_actions в UI (краткое резюме), обработка ошибок.",
+      "priority": 60,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "apps/mobile/src/screens/ChatScreen.tsx",
+        "apps/mobile/src/api/chatApi.ts"
+      ]
+    },
+    {
+      "title": "RN: подключить экран к Stack Navigator",
+      "description": "Маршрут к ChatScreen; передача токена в заголовках API; без Expo Router.",
+      "priority": 70,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "apps/mobile/src/navigation/AppStack.tsx",
+        "apps/mobile/src/navigation/types.ts"
+      ]
+    }
+  ],
+  "memory_bank": {
+    "doc_writes": [
+      {
+        "doc_key": "memory-bank/activeContext.md",
+        "doc_type": "activeContext",
+        "title": "Active Context",
+        "content": "Фокус: Conversational Task Assistant MVP (чат + LLM + планировщик).\\n\\nКлиент: Expo RN, Stack Navigator, без Expo Router.\\nСледующий шаг: контракт API → бэкенд LLM + хранилище → UI чата.\\n"
+      }
+    ],
+    "state_json": {
+      "phase": "PLAN",
+      "current_requirement_title": "Чат с LLM: задачи, напоминания и расписание из естественного языка (RN Expo + бэкенд)"
+    }
+  }
+}
