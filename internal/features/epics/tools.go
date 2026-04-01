@@ -84,7 +84,8 @@ func (t *Tools) ListEpics(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	if err != nil {
 		return mcputil.Err(err.Error())
 	}
-	return mcputil.Structured(out, fmt.Sprintf("Listed %d epic(s).", len(out)))
+	resp := map[string]any{"epics": out, "count": len(out)}
+	return mcputil.Structured(resp, fmt.Sprintf("Listed %d epic(s).", len(out)))
 }
 
 func (t *Tools) LinkRequirementToEpic(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -192,6 +193,7 @@ func (t *Tools) EpicListTasks(ctx context.Context, req mcp.CallToolRequest) (*mc
 	if err != nil {
 		return mcputil.Err(err.Error())
 	}
-	return mcputil.Structured(out, "epic tasks listed")
+	resp := map[string]any{"tasks": out, "count": len(out)}
+	return mcputil.Structured(resp, "epic tasks listed")
 }
 
