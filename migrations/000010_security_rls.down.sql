@@ -1,0 +1,21 @@
+DROP POLICY IF EXISTS p_mb_rules_project ON mb_rules;
+DROP POLICY IF EXISTS p_mb_state_project ON mb_state;
+DROP POLICY IF EXISTS p_mb_documents_project ON mb_documents;
+DROP POLICY IF EXISTS p_document_chunks_project ON document_chunks;
+DROP POLICY IF EXISTS p_documents_project ON documents;
+DROP POLICY IF EXISTS p_github_links_project ON github_links;
+DROP POLICY IF EXISTS p_epics_project ON epics;
+DROP POLICY IF EXISTS p_task_files_project ON task_files;
+DROP POLICY IF EXISTS p_tasks_project ON tasks;
+DROP POLICY IF EXISTS p_requirements_project ON requirements;
+
+ALTER TABLE mb_rules DISABLE ROW LEVEL SECURITY;
+ALTER TABLE mb_state DISABLE ROW LEVEL SECURITY;
+ALTER TABLE mb_documents DISABLE ROW LEVEL SECURITY;
+ALTER TABLE document_chunks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE documents DISABLE ROW LEVEL SECURITY;
+ALTER TABLE github_links DISABLE ROW LEVEL SECURITY;
+ALTER TABLE epics DISABLE ROW LEVEL SECURITY;
+ALTER TABLE task_files DISABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE requirements DISABLE ROW LEVEL SECURITY;

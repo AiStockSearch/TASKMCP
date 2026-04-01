@@ -1,7 +1,9 @@
 package tasks
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -34,12 +36,24 @@ func (s *Service) GetNextTask(ctx context.Context, repoKey string) (NextTaskResp
 	if !ok {
 		return NextTaskResponse{}, false, nil
 	}
-	return NextTaskResponse{
+	out := NextTaskResponse{
 		TaskID:      row.ID.String(),
 		Title:       row.Title,
 		Description: row.Description,
 		FilePaths:   paths,
-	}, true, nil
+	}
+	if row.RequirementID != nil {
+		s := row.RequirementID.String()
+		out.RequirementID = &s
+	}
+	if row.RequirementTitle.Valid {
+		s := row.RequirementTitle.String
+		out.RequirementTitle = &s
+	}
+	if len(row.SpecJSON) > 0 {
+		out.SpecJSON = json.RawMessage(bytes.Clone(row.SpecJSON))
+	}
+	return out, true, nil
 }
 
 func (s *Service) CompleteTask(ctx context.Context, repoKey string, taskID uuid.UUID, report string) (bool, error) {
@@ -64,13 +78,14 @@ func (s *Service) AddContextFile(ctx context.Context, repoKey string, taskID uui
 }
 
 type ListInput struct {
-	Status        string
-	RequirementID *uuid.UUID
-	EpicID        *uuid.UUID
-	Limit         int
-	Offset        int
-	Order         string
-	IncludeFiles  bool
+	Status                 string
+	RequirementID        *uuid.UUID
+	EpicID               *uuid.UUID
+	Limit                int
+	Offset               int
+	Order                string
+	IncludeFiles         bool
+	IncludeRequirementSpec bool
 }
 
 func (s *Service) ListTasks(ctx context.Context, repoKey string, in ListInput) ([]TaskDTO, error) {
@@ -79,13 +94,14 @@ func (s *Service) ListTasks(ctx context.Context, repoKey string, in ListInput) (
 		return nil, err
 	}
 	rows, err := s.repo.List(ctx, ListOptions{
-		ProjectID:     projectID,
-		Status:        in.Status,
-		RequirementID: in.RequirementID,
-		EpicID:        in.EpicID,
-		Limit:         in.Limit,
-		Offset:        in.Offset,
-		Order:         in.Order,
+		ProjectID:              projectID,
+		Status:                 in.Status,
+		RequirementID:          in.RequirementID,
+		EpicID:                 in.EpicID,
+		Limit:                  in.Limit,
+		Offset:                 in.Offset,
+		Order:                  in.Order,
+		IncludeRequirementSpec: in.IncludeRequirementSpec,
 	})
 	if err != nil {
 		return nil, err
@@ -108,6 +124,15 @@ func (s *Service) ListTasks(ctx context.Context, repoKey string, in ListInput) (
 		if r.EpicID != nil {
 			s := r.EpicID.String()
 			dto.EpicID = &s
+		}
+		if in.IncludeRequirementSpec {
+			if r.RequirementTitle.Valid {
+				s := r.RequirementTitle.String
+				dto.RequirementTitle = &s
+			}
+			if len(r.SpecJSON) > 0 {
+				dto.SpecJSON = json.RawMessage(bytes.Clone(r.SpecJSON))
+			}
 		}
 		out = append(out, dto)
 		ids = append(ids, r.ID)
@@ -158,6 +183,13 @@ func (s *Service) GetTask(ctx context.Context, repoKey string, taskID uuid.UUID)
 	if row.RequirementID != nil {
 		s := row.RequirementID.String()
 		dto.RequirementID = &s
+	}
+	if row.RequirementTitle.Valid {
+		s := row.RequirementTitle.String
+		dto.RequirementTitle = &s
+	}
+	if len(row.SpecJSON) > 0 {
+		dto.SpecJSON = json.RawMessage(bytes.Clone(row.SpecJSON))
 	}
 	if row.EpicID != nil {
 		s := row.EpicID.String()

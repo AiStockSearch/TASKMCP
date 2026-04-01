@@ -1,4 +1,3 @@
--- +migrate Up
 CREATE TABLE IF NOT EXISTS epics (
   id UUID PRIMARY KEY,
   title TEXT NOT NULL,
@@ -38,17 +37,3 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_epic_id ON tasks(epic_id);
 CREATE INDEX IF NOT EXISTS idx_requirements_epic_id ON requirements(epic_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status_priority_id ON tasks(status, priority, id);
-
--- +migrate Down
-DROP INDEX IF EXISTS idx_tasks_status_priority_id;
-DROP INDEX IF EXISTS idx_requirements_epic_id;
-DROP INDEX IF EXISTS idx_tasks_epic_id;
-
-ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_epic_id_fkey;
-ALTER TABLE requirements DROP CONSTRAINT IF EXISTS requirements_epic_id_fkey;
-
-ALTER TABLE tasks DROP COLUMN IF EXISTS epic_id;
-ALTER TABLE requirements DROP COLUMN IF EXISTS epic_id;
-
-DROP TABLE IF EXISTS epics;

@@ -143,3 +143,135 @@ func (s *Service) Search(ctx context.Context, repoKey string, queryEmbedding []f
 	return s.repo.Search(ctx, projectID, pgvector.NewVector(queryEmbedding), topK)
 }
 
+type HybridSearchInput struct {
+	RepoKey        string
+	QueryText      string
+	QueryEmbedding []float32
+	TopK           int
+	FTSWeight      float64
+	VecWeight      float64
+}
+
+func (s *Service) HybridSearch(ctx context.Context, in HybridSearchInput) ([]SearchResult, error) {
+	_, _, rk, err := projects.ParseRepoKey(in.RepoKey)
+	if err != nil {
+		return nil, err
+	}
+	projectID, err := s.projects.Resolve(ctx, rk)
+	if err != nil {
+		return nil, err
+	}
+
+	topK := in.TopK
+	if topK <= 0 {
+		topK = 8
+	}
+	if topK > 50 {
+		topK = 50
+	}
+	ftsW := in.FTSWeight
+	vecW := in.VecWeight
+	if ftsW == 0 && vecW == 0 {
+		ftsW = 0.3
+		vecW = 0.7
+	}
+
+	var fts []SearchResult
+	if strings.TrimSpace(in.QueryText) != "" {
+		fts, err = s.repo.SearchFTS(ctx, projectID, in.QueryText, topK*4)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(in.QueryEmbedding) == 0 {
+		// FTS-only mode
+		if len(fts) > topK {
+			return fts[:topK], nil
+		}
+		return fts, nil
+	}
+	if s.dim > 0 && len(in.QueryEmbedding) != s.dim {
+		return nil, fmt.Errorf("query_embedding dimension mismatch: got %d want %d", len(in.QueryEmbedding), s.dim)
+	}
+
+	vec, err := s.repo.Search(ctx, projectID, pgvector.NewVector(in.QueryEmbedding), topK*4)
+	if err != nil {
+		return nil, err
+	}
+
+	return mergeHybrid(fts, vec, topK, ftsW, vecW), nil
+}
+
+func mergeHybrid(fts []SearchResult, vec []SearchResult, topK int, ftsW, vecW float64) []SearchResult {
+	type key struct {
+		doc uuid.UUID
+		idx int
+	}
+	type agg struct {
+		base SearchResult
+		fts  float64
+		vec  float64
+	}
+
+	m := make(map[key]*agg, len(fts)+len(vec))
+	maxFTS := 0.0
+	for _, r := range fts {
+		if r.Score > maxFTS {
+			maxFTS = r.Score
+		}
+		k := key{doc: r.DocumentID, idx: r.ChunkIndex}
+		a := m[k]
+		if a == nil {
+			cp := r
+			a = &agg{base: cp}
+			m[k] = a
+		}
+		a.fts = r.Score
+	}
+	maxVec := 0.0
+	for _, r := range vec {
+		if r.Score > maxVec {
+			maxVec = r.Score
+		}
+		k := key{doc: r.DocumentID, idx: r.ChunkIndex}
+		a := m[k]
+		if a == nil {
+			cp := r
+			a = &agg{base: cp}
+			m[k] = a
+		}
+		a.vec = r.Score
+	}
+
+	denFTS := maxFTS
+	if denFTS == 0 {
+		denFTS = 1
+	}
+	denVec := maxVec
+	if denVec == 0 {
+		denVec = 1
+	}
+
+	out := make([]SearchResult, 0, len(m))
+	for _, a := range m {
+		nFTS := a.fts / denFTS
+		nVec := a.vec / denVec
+		a.base.Score = ftsW*nFTS + vecW*nVec
+		out = append(out, a.base)
+	}
+
+	// sort by score desc
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].Score > out[i].Score {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	if len(out) > topK {
+		out = out[:topK]
+	}
+	return out
+}
+

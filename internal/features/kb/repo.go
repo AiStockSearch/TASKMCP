@@ -111,3 +111,33 @@ LIMIT $3
 	return out, nil
 }
 
+func (r *Repo) SearchFTS(ctx context.Context, projectID uuid.UUID, queryText string, topK int) ([]SearchResult, error) {
+	rows, err := r.db.QueryContext(ctx, `
+SELECT c.document_id, d.source_type, d.source_path, c.chunk_index, c.content,
+       ts_rank(c.content_tsv, plainto_tsquery('simple', $2)) AS score,
+       c.created_at
+FROM document_chunks c
+JOIN documents d ON d.id = c.document_id
+WHERE c.project_id = $1 AND c.content_tsv @@ plainto_tsquery('simple', $2)
+ORDER BY score DESC, c.created_at DESC
+LIMIT $3
+`, projectID, queryText, topK)
+	if err != nil {
+		return nil, fmt.Errorf("fts search chunks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []SearchResult
+	for rows.Next() {
+		var r0 SearchResult
+		if err := rows.Scan(&r0.DocumentID, &r0.SourceType, &r0.SourcePath, &r0.ChunkIndex, &r0.Content, &r0.Score, &r0.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan fts result: %w", err)
+		}
+		out = append(out, r0)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate fts results: %w", err)
+	}
+	return out, nil
+}
+

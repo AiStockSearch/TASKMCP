@@ -117,3 +117,45 @@ func (t *Tools) ChunkMarkdown(ctx context.Context, req mcp.CallToolRequest) (*mc
 	return mcputil.Structured(out, fmt.Sprintf("Chunked into %d chunk(s).", len(out)))
 }
 
+func (t *Tools) HybridSearch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.db.Ensure(ctx); err != nil {
+		return mcputil.Err(err.Error())
+	}
+	repoKey, r := repoKeyFromReq(req)
+	if r != nil {
+		return r, nil
+	}
+
+	queryText, err := req.RequireString("query_text")
+	if err != nil {
+		return mcputil.Err(err.Error())
+	}
+
+	raw := req.GetArguments()["query_embedding"]
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return mcputil.Err(fmt.Sprintf("invalid query_embedding: %v", err))
+	}
+	var emb []float32
+	if err := json.Unmarshal(b, &emb); err != nil {
+		return mcputil.Err(fmt.Sprintf("invalid query_embedding: %v", err))
+	}
+
+	topK := req.GetInt("top_k", 8)
+	ftsW := req.GetFloat("fts_weight", 0)
+	vecW := req.GetFloat("vec_weight", 0)
+
+	out, err := t.svc.HybridSearch(ctx, HybridSearchInput{
+		RepoKey:        repoKey,
+		QueryText:      queryText,
+		QueryEmbedding: emb,
+		TopK:           topK,
+		FTSWeight:      ftsW,
+		VecWeight:      vecW,
+	})
+	if err != nil {
+		return mcputil.Err(err.Error())
+	}
+	return mcputil.Structured(out, fmt.Sprintf("Found %d chunk(s).", len(out)))
+}
+

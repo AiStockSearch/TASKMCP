@@ -1,0 +1,132 @@
+{
+  "repo_key": "acme/mobile-app",
+  "requirement": {
+    "title": "Авторизация и регистрация для мобильного приложения React Native",
+    "status": "todo",
+    "spec_json": {
+      "platform": "react-native",
+      "auth_methods": [
+        "email_password"
+      ],
+      "definition_of_done": [
+        "Пользователь может зарегистрироваться по email/password",
+        "Пользователь может войти и остаётся залогинен после перезапуска приложения",
+        "Logout работает и чистит токены",
+        "Ошибки (невалидный email/пароль, сеть) отображаются корректно"
+      ],
+      "non_goals": [
+        "OAuth/SSO на первом этапе"
+      ],
+      "notes": [
+        "Подготовить код для будущего добавления OAuth (Google/Apple)"
+      ]
+    }
+  },
+  "epic": {
+    "mode": "create_or_skip",
+    "title": "Mobile Auth MVP",
+    "description": "MVP авторизации/регистрации для RN приложения",
+    "status": "open"
+  },
+  "tasks": [
+    {
+      "title": "Определить auth flows и состояния",
+      "description": "Описать login/signup/forgot, валидацию, ошибки, loading, навигацию между экранами.",
+      "priority": 10,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "apps/mobile/src/navigation/AuthStack.tsx",
+        "apps/mobile/src/screens/LoginScreen.tsx",
+        "apps/mobile/src/screens/SignupScreen.tsx"
+      ]
+    },
+    {
+      "title": "Реализовать API-клиент и auth endpoints",
+      "description": "Добавить HTTP клиент, модели запросов/ответов, методы signup/login/logout/refresh (если есть).",
+      "priority": 20,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "apps/mobile/src/api/httpClient.ts",
+        "apps/mobile/src/api/authApi.ts",
+        "apps/mobile/src/api/types.ts"
+      ]
+    },
+    {
+      "title": "Сделать secure token storage",
+      "description": "Сохранение access/refresh токенов (Keychain/Keystore), helper для чтения/очистки, logout.",
+      "priority": 30,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "apps/mobile/src/auth/tokenStore.ts",
+        "apps/mobile/src/auth/authService.ts"
+      ]
+    },
+    {
+      "title": "Собрать UI: Login/Signup",
+      "description": "Экраны входа/регистрации с валидацией, отображением ошибок, блокировкой кнопок при запросах.",
+      "priority": 40,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "apps/mobile/src/screens/LoginScreen.tsx",
+        "apps/mobile/src/screens/SignupScreen.tsx"
+      ]
+    },
+    {
+      "title": "Навигация и guard: auth stack vs app stack",
+      "description": "Маршрутизация неавторизованных пользователей в auth stack; обработка logout.",
+      "priority": 50,
+      "status": "todo",
+      "link_to": {
+        "requirement": true,
+        "epic": true
+      },
+      "task_files": [
+        "apps/mobile/src/navigation/RootNavigator.tsx",
+        "apps/mobile/src/navigation/AuthStack.tsx"
+      ]
+    }
+  ],
+  "memory_bank": {
+    "doc_writes": [
+      {
+        "doc_key": "memory-bank/tasks.md",
+        "doc_type": "tasks",
+        "title": "Backlog",
+        "content": "## Backlog\\n\\n- [ ] Auth & Registration (RN)\\n"
+      },
+      {
+        "doc_key": "memory-bank/activeContext.md",
+        "doc_type": "activeContext",
+        "title": "Active Context",
+        "content": "Фокус: Mobile Auth MVP (RN).\\n\\nСледующий шаг: взять задачу с наивысшим приоритетом и выполнить.\\n"
+      },
+      {
+        "doc_key": "memory-bank/progress.md",
+        "doc_type": "progress",
+        "title": "Progress",
+        "content": "Старт проекта.\\n"
+      }
+    ],
+    "state_json": {
+      "phase": "PLAN",
+      "current_requirement_title": "Авторизация и регистрация для мобильного приложения React Native"
+    }
+  }
+}
+

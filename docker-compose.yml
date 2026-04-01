@@ -1,0 +1,78 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  postgres:
+    # pgvector extension (required for migrations 000006+)
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: vault
+      POSTGRES_DB: vault
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - vault_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d vault"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    entrypoint: ["migrate"]
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://vault:vault@postgres:5432/vault?sslmode=disable",
+        "up"
+      ]
+
+  orchestrator-api:
+    profiles: ["orchestrator"]
+    build: ./orchestrator
+    environment:
+      DATABASE_URL: postgres://vault:vault@postgres:5432/vault?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-change-me}
+      API_HOST: 0.0.0.0
+      API_PORT: "8080"
+    ports:
+      - "${ORCHESTRATOR_API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  orchestrator-worker:
+    profiles: ["orchestrator"]
+    build: ./orchestrator
+    command: ["arq", "vault_orchestrator.jobs.WorkerSettings"]
+    environment:
+      DATABASE_URL: postgres://vault:vault@postgres:5432/vault?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  vault_pg_data:
+

@@ -1,0 +1,15 @@
+---
+description: Формат PlanBundle для записи в Vault (writer-contract, пример в examples/)
+globs: plans/**/*.json
+alwaysApply: false
+---
+
+# PlanBundle
+
+При создании или правке JSON-пакета для оркестратора:
+
+- Полный контракт: `docs/writer-contract.md`.
+- Эталонная форма и ключи: `examples/planbundle_rn_auth.json`.
+- Применение в Vault: `make apply-plan-bundle PLAN_BUNDLE_FILE=<путь>` (сервис оркестратора и `WEBHOOK_SECRET` должны быть заданы).
+
+Стабильные `requirement.title` и `tasks[].title` облегчают повторные apply без дублей (см. уникальные индексы в writer-contract).
