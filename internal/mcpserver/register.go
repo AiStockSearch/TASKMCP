@@ -114,6 +114,28 @@ func RegisterTools(s *server.MCPServer, a *app.App) {
 		a.EpicsTools.LinkTaskToEpic,
 	)
 
+	s.AddTool(
+		mcp.NewTool(
+			"epic_add_tasks",
+			mcp.WithDescription("Link multiple tasks to an epic in one call."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("epic_id", mcp.Required(), mcp.Description("Epic UUID")),
+			mcp.WithArray("task_ids", mcp.WithStringItems(mcp.MinLength(1)), mcp.Description("Array of task UUIDs")),
+		),
+		a.EpicsTools.EpicAddTasks,
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"epic_list_tasks",
+			mcp.WithDescription("List tasks linked to an epic."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("epic_id", mcp.Required(), mcp.Description("Epic UUID")),
+			mcp.WithBoolean("include_files", mcp.Description("Optional: include task_files in response")),
+		),
+		a.EpicsTools.EpicListTasks,
+	)
+
 	// github issues
 	s.AddTool(
 		mcp.NewTool(
@@ -174,6 +196,148 @@ func RegisterTools(s *server.MCPServer, a *app.App) {
 			mcp.WithNumber("overlap_chars", mcp.Description("Optional: default 300")),
 		),
 		a.KBTools.ChunkMarkdown,
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"kb_hybrid_search",
+			mcp.WithDescription("Hybrid retrieval: FTS + pgvector merged scoring."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("query_text", mcp.Required(), mcp.Description("Query text for full-text search")),
+			mcp.WithArray("query_embedding", mcp.Description("float32 embedding vector (can be empty to run FTS-only)"), mcp.WithNumberItems()),
+			mcp.WithNumber("top_k", mcp.Description("Optional: default 8, max 50")),
+			mcp.WithNumber("fts_weight", mcp.Description("Optional: default 0.3")),
+			mcp.WithNumber("vec_weight", mcp.Description("Optional: default 0.7")),
+		),
+		a.KBTools.HybridSearch,
+	)
+
+	// memory bank (vault-only)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_get_document",
+			mcp.WithDescription("Get a Memory Bank document by doc_key from Vault (Postgres)."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("doc_key", mcp.Required(), mcp.Description("Document key (e.g. memory-bank/activeContext.md)")),
+		),
+		a.MBTools.GetDocument,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_upsert_document",
+			mcp.WithDescription("Upsert a Memory Bank document with versioning (idempotent by content hash)."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("doc_key", mcp.Required(), mcp.Description("Document key (e.g. plans/<task_id>.md)")),
+			mcp.WithString("doc_type", mcp.Required(), mcp.Description("tasks|activeContext|progress|plan|adr|refactor_plan|reflection|archive")),
+			mcp.WithString("title", mcp.Description("Optional: document title")),
+			mcp.WithString("content", mcp.Required(), mcp.Description("Full document content")),
+		),
+		a.MBTools.UpsertDocument,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_list_documents",
+			mcp.WithDescription("List Memory Bank documents for a project."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("doc_type", mcp.Description("Optional: filter by doc_type")),
+			mcp.WithNumber("limit", mcp.Description("Optional: default 50, max 200")),
+			mcp.WithNumber("offset", mcp.Description("Optional: default 0")),
+		),
+		a.MBTools.ListDocuments,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_get_state",
+			mcp.WithDescription("Get Memory Bank state JSON for a project."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+		),
+		a.MBTools.GetState,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_set_state",
+			mcp.WithDescription("Set Memory Bank state JSON for a project."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithObject("state_json", mcp.Required(), mcp.Description("JSON object")),
+		),
+		a.MBTools.SetState,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_rules_list",
+			mcp.WithDescription("List atomic rules (project-scoped + global if repo_key provided; global only if omitted)."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var). Omit to list global rules only.")),
+			mcp.WithString("scope_prefix", mcp.Description("Optional: prefix filter, e.g. phase:PLAN")),
+			mcp.WithBoolean("enabled_only", mcp.Description("Optional: default true")),
+			mcp.WithNumber("limit", mcp.Description("Optional: default 200, max 200")),
+			mcp.WithNumber("offset", mcp.Description("Optional: default 0")),
+		),
+		a.MBTools.RulesList,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_rules_upsert",
+			mcp.WithDescription("Create or update an atomic rule. If repo_key omitted, creates/updates a global rule."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var). Omit for global.")),
+			mcp.WithString("rule_id", mcp.Description("Optional: rule UUID to update; omit to create new")),
+			mcp.WithString("scope", mcp.Required(), mcp.Description("Rule scope, e.g. phase:PLAN, tool:get_next_task")),
+			mcp.WithNumber("priority", mcp.Description("Optional: default 100 (lower is higher priority)")),
+			mcp.WithString("title", mcp.Required(), mcp.Description("Rule title")),
+			mcp.WithString("content", mcp.Required(), mcp.Description("Rule content")),
+			mcp.WithBoolean("enabled", mcp.Description("Optional: default true")),
+		),
+		a.MBTools.RulesUpsert,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_rules_enable",
+			mcp.WithDescription("Enable a rule (project-scoped or global)."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var). Omit to enable global rule only.")),
+			mcp.WithString("rule_id", mcp.Required(), mcp.Description("Rule UUID")),
+		),
+		a.MBTools.RulesEnable,
+	)
+	s.AddTool(
+		mcp.NewTool(
+			"mb_rules_disable",
+			mcp.WithDescription("Disable a rule (project-scoped or global)."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var). Omit to disable global rule only.")),
+			mcp.WithString("rule_id", mcp.Required(), mcp.Description("Rule UUID")),
+		),
+		a.MBTools.RulesDisable,
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"mb_list_versions",
+			mcp.WithDescription("List versions for a Memory Bank document."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("doc_key", mcp.Required(), mcp.Description("Document key")),
+			mcp.WithNumber("limit", mcp.Description("Optional: default 50, max 200")),
+			mcp.WithNumber("offset", mcp.Description("Optional: default 0")),
+		),
+		a.MBTools.ListVersions,
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"mb_get_document_version",
+			mcp.WithDescription("Get a specific version of a Memory Bank document."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
+			mcp.WithString("doc_key", mcp.Required(), mcp.Description("Document key")),
+			mcp.WithNumber("version", mcp.Required(), mcp.Description("Version number (>=1)")),
+		),
+		a.MBTools.GetDocumentVersion,
+	)
+
+	s.AddTool(
+		mcp.NewTool(
+			"mb_rules_apply_preview",
+			mcp.WithDescription("Preview the rules pack that would apply for given scope prefixes."),
+			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var). Omit for global-only.")),
+			mcp.WithArray("scopes", mcp.WithStringItems(mcp.MinLength(1)), mcp.Description("Scope prefixes, e.g. phase:PLAN, tool:get_next_task")),
+		),
+		a.MBTools.RulesApplyPreview,
 	)
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"mcp-vault-bridge/internal/mcputil"
@@ -138,5 +139,59 @@ func (t *Tools) LinkTaskToEpic(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcputil.Err("task not found")
 	}
 	return mcputil.Text("Task linked to epic successfully.")
+}
+
+func (t *Tools) EpicAddTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.db.Ensure(ctx); err != nil {
+		return mcputil.Err(err.Error())
+	}
+	repoKey, r := repoKeyFromReq(req)
+	if r != nil {
+		return r, nil
+	}
+	epicID, r := mcputil.RequireUUID(req, "epic_id")
+	if r != nil {
+		return r, nil
+	}
+
+	ids, err := req.RequireStringSlice("task_ids")
+	if err != nil {
+		return mcputil.Err(err.Error())
+	}
+	var taskIDs []uuid.UUID
+	for _, s := range ids {
+		id, err := uuid.Parse(strings.TrimSpace(s))
+		if err != nil {
+			return mcputil.Err("invalid task_ids (expected UUIDs)")
+		}
+		taskIDs = append(taskIDs, id)
+	}
+
+	out, err := t.svc.AddTasksToEpic(ctx, repoKey, epicID, taskIDs)
+	if err != nil {
+		return mcputil.Err(err.Error())
+	}
+	return mcputil.Structured(out, "tasks linked to epic")
+}
+
+func (t *Tools) EpicListTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.db.Ensure(ctx); err != nil {
+		return mcputil.Err(err.Error())
+	}
+	repoKey, r := repoKeyFromReq(req)
+	if r != nil {
+		return r, nil
+	}
+	epicID, r := mcputil.RequireUUID(req, "epic_id")
+	if r != nil {
+		return r, nil
+	}
+	includeFiles := req.GetBool("include_files", false)
+
+	out, err := t.svc.ListEpicTasks(ctx, repoKey, epicID, includeFiles)
+	if err != nil {
+		return mcputil.Err(err.Error())
+	}
+	return mcputil.Structured(out, "epic tasks listed")
 }
 

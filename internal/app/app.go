@@ -10,6 +10,7 @@ import (
 	"mcp-vault-bridge/internal/features/epics"
 	"mcp-vault-bridge/internal/features/githubissues"
 	"mcp-vault-bridge/internal/features/kb"
+	"mcp-vault-bridge/internal/features/memorybank"
 	"mcp-vault-bridge/internal/features/projects"
 	"mcp-vault-bridge/internal/features/tasks"
 	"mcp-vault-bridge/internal/storage/postgres"
@@ -25,6 +26,7 @@ type App struct {
 	EpicsTools *epics.Tools
 	GHTools    *githubissues.Tools
 	KBTools    *kb.Tools
+	MBTools    *memorybank.Tools
 }
 
 func New(db *sql.DB) *App {
@@ -52,6 +54,9 @@ func New(db *sql.DB) *App {
 		}
 	}
 
+	mbRepo := memorybank.NewRepo(db)
+	mbSvc := memorybank.NewService(mbRepo, projectResolver)
+
 	return &App{
 		DB:        db,
 		DBGuard:   guard,
@@ -61,6 +66,7 @@ func New(db *sql.DB) *App {
 		EpicsTools: epics.NewTools(epicsSvc, guard),
 		GHTools:    githubissues.NewTools(ghSvc, guard),
 		KBTools:    kb.NewTools(kbSvc, guard),
+		MBTools:    memorybank.NewTools(mbSvc, guard),
 	}
 }
 

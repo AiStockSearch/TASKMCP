@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type Repo struct {
@@ -113,5 +114,162 @@ func (r *Repo) Exists(ctx context.Context, epicID uuid.UUID) (bool, error) {
 		return false, fmt.Errorf("query epic exists: %w", err)
 	}
 	return true, nil
+}
+
+func (r *Repo) AddTasksToEpic(ctx context.Context, projectID uuid.UUID, epicID uuid.UUID, taskIDs []uuid.UUID) (updated int64, existing []uuid.UUID, err error) {
+	// Fetch existing tasks within project
+	rows, err := r.db.QueryContext(ctx, `
+SELECT id
+FROM tasks
+WHERE project_id = $1 AND id = ANY($2)
+`, projectID, pq.Array(taskIDs))
+	if err != nil {
+		return 0, nil, fmt.Errorf("query existing tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return 0, nil, fmt.Errorf("scan existing task id: %w", err)
+		}
+		existing = append(existing, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, fmt.Errorf("iterate existing tasks: %w", err)
+	}
+
+	if len(existing) == 0 {
+		return 0, nil, nil
+	}
+
+	res, err := r.db.ExecContext(ctx, `
+UPDATE tasks
+SET epic_id = $3
+WHERE project_id = $1 AND id = ANY($2)
+`, projectID, pq.Array(existing), epicID)
+	if err != nil {
+		return 0, existing, fmt.Errorf("update tasks epic_id: %w", err)
+	}
+	updated, err = res.RowsAffected()
+	if err != nil {
+		return 0, existing, fmt.Errorf("rows affected: %w", err)
+	}
+	return updated, existing, nil
+}
+
+type EpicTaskRow struct {
+	ID            uuid.UUID
+	RequirementID *uuid.UUID
+	EpicID        *uuid.UUID
+	Title         string
+	Description   string
+	Status        string
+	Priority      int
+	FilePaths     []string
+}
+
+func (r *Repo) ListEpicTasks(ctx context.Context, projectID uuid.UUID, epicID uuid.UUID, includeFiles bool) ([]EpicTaskRow, error) {
+	if includeFiles {
+		rows, err := r.db.QueryContext(ctx, `
+SELECT t.id, t.requirement_id, t.epic_id, t.title, COALESCE(t.description, ''), t.status, t.priority,
+       COALESCE(array_agg(tf.file_path ORDER BY tf.file_path) FILTER (WHERE tf.file_path IS NOT NULL), '{}') AS file_paths
+FROM tasks t
+LEFT JOIN task_files tf
+  ON tf.project_id = t.project_id AND tf.task_id = t.id
+WHERE t.project_id = $1 AND t.epic_id = $2
+GROUP BY t.id, t.requirement_id, t.epic_id, t.title, t.description, t.status, t.priority
+ORDER BY t.priority ASC, t.id ASC
+`, projectID, epicID)
+		if err != nil {
+			return nil, fmt.Errorf("query epic tasks: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+
+		var out []EpicTaskRow
+		for rows.Next() {
+			var (
+				id        uuid.UUID
+				reqID     sql.Null[uuid.UUID]
+				epID      sql.Null[uuid.UUID]
+				title     string
+				desc      string
+				status    string
+				priority  int
+				paths     pq.StringArray
+			)
+			if err := rows.Scan(&id, &reqID, &epID, &title, &desc, &status, &priority, &paths); err != nil {
+				return nil, fmt.Errorf("scan epic task: %w", err)
+			}
+			row := EpicTaskRow{
+				ID:          id,
+				Title:       title,
+				Description: desc,
+				Status:      status,
+				Priority:    priority,
+				FilePaths:   []string(paths),
+			}
+			if reqID.Valid {
+				v := reqID.V
+				row.RequirementID = &v
+			}
+			if epID.Valid {
+				v := epID.V
+				row.EpicID = &v
+			}
+			out = append(out, row)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate epic tasks: %w", err)
+		}
+		return out, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+SELECT id, requirement_id, epic_id, title, COALESCE(description, ''), status, priority
+FROM tasks
+WHERE project_id = $1 AND epic_id = $2
+ORDER BY priority ASC, id ASC
+`, projectID, epicID)
+	if err != nil {
+		return nil, fmt.Errorf("query epic tasks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []EpicTaskRow
+	for rows.Next() {
+		var (
+			id        uuid.UUID
+			reqID     sql.Null[uuid.UUID]
+			epID      sql.Null[uuid.UUID]
+			title     string
+			desc      string
+			status    string
+			priority  int
+		)
+		if err := rows.Scan(&id, &reqID, &epID, &title, &desc, &status, &priority); err != nil {
+			return nil, fmt.Errorf("scan epic task: %w", err)
+		}
+		row := EpicTaskRow{
+			ID:          id,
+			Title:       title,
+			Description: desc,
+			Status:      status,
+			Priority:    priority,
+		}
+		if reqID.Valid {
+			v := reqID.V
+			row.RequirementID = &v
+		}
+		if epID.Valid {
+			v := epID.V
+			row.EpicID = &v
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate epic tasks: %w", err)
+	}
+	return out, nil
 }
 

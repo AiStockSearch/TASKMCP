@@ -1,0 +1,38 @@
+services:
+  postgres:
+    # pgvector extension (required for migrations 000006+)
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: vault
+      POSTGRES_DB: vault
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - vault_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d vault"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    entrypoint: ["migrate"]
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://vault:vault@postgres:5432/vault?sslmode=disable",
+        "up"
+      ]
+
+volumes:
+  vault_pg_data:
+

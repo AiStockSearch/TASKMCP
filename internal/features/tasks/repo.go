@@ -98,12 +98,7 @@ WHERE project_id = $1 AND id = $2 AND status = 'in_progress'
 `
 
 func (r *Repo) CompleteInProgress(ctx context.Context, projectID uuid.UUID, taskID uuid.UUID, appendix string) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `
-UPDATE tasks
-SET status = 'done',
-    description = COALESCE(description, '') || $2
-WHERE project_id = $1 AND id = $2 AND status = 'in_progress'
-`, projectID, taskID, appendix)
+	res, err := r.db.ExecContext(ctx, qCompleteTask, projectID, taskID, appendix)
 	if err != nil {
 		return false, fmt.Errorf("update task: %w", err)
 	}
