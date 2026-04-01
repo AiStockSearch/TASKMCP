@@ -2,8 +2,11 @@
 
 Этот документ фиксирует **детерминированный write-side контракт** для LangChain‑оркестратора, который пишет требования/эпики/задачи в Vault (Postgres) так, чтобы операции были **повторяемыми (at‑least‑once safe)** и не создавали дублей.
 
+Контекст слоёв 0–4 (интервью, декомпозиция, Vault, MCP, Cursor): [`architecture-five-layers.md`](architecture-five-layers.md).
+
 ## Source of truth
 
+- **Брокер очереди** (например Redis) используется опционально: оркестратор [`orchestrator/`](../orchestrator/README.md) ставит задания `apply PlanBundle` в очередь; исполнитель применяет ту же транзакцию, что описана ниже.
 - Vault (Postgres) — единственный source of truth для:
   - `projects`, `requirements`, `epics`, `tasks`, `task_files`
   - Memory Bank артефактов: `mb_documents`, `mb_document_versions`, `mb_state`, `mb_rules`

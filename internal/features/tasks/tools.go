@@ -143,15 +143,17 @@ func (t *Tools) ListTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	}
 
 	includeFiles := req.GetBool("include_files", false)
+	includeReqSpec := req.GetBool("include_requirement_spec", false)
 
 	out, err := t.svc.ListTasks(ctx, repoKey, ListInput{
-		Status:        status,
-		RequirementID: requirementID,
-		EpicID:        epicID,
-		Limit:         limit,
-		Offset:        offset,
-		Order:         order,
-		IncludeFiles:  includeFiles,
+		Status:                 status,
+		RequirementID:          requirementID,
+		EpicID:                 epicID,
+		Limit:                  limit,
+		Offset:                 offset,
+		Order:                  order,
+		IncludeFiles:           includeFiles,
+		IncludeRequirementSpec: includeReqSpec,
 	})
 	if err != nil {
 		return mcputil.Err(err.Error())

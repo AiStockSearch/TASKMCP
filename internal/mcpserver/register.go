@@ -21,7 +21,7 @@ func RegisterTools(s *server.MCPServer, a *app.App) {
 	s.AddTool(
 		mcp.NewTool(
 			"get_next_task",
-			mcp.WithDescription("Fetch the highest priority todo task and lock it by moving it to in_progress."),
+			mcp.WithDescription("Fetch the highest priority todo task and lock it by moving it to in_progress. Includes linked requirement title and spec_json (DoD/constraints) when task.requirement_id is set."),
 			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
 		),
 		a.TasksTools.GetNextTask,
@@ -58,13 +58,14 @@ func RegisterTools(s *server.MCPServer, a *app.App) {
 			mcp.WithNumber("offset", mcp.Description("Optional: default 0")),
 			mcp.WithString("order", mcp.Description("Optional: priority|created_at (default priority)")),
 			mcp.WithBoolean("include_files", mcp.Description("Optional: include task_files in response")),
+			mcp.WithBoolean("include_requirement_spec", mcp.Description("Optional: include requirement_title and spec_json per task (JOIN requirements); omit by default to keep payloads small")),
 		),
 		a.TasksTools.ListTasks,
 	)
 	s.AddTool(
 		mcp.NewTool(
 			"get_task",
-			mcp.WithDescription("Get a single task by id, including files and GitHub link if present."),
+			mcp.WithDescription("Get a single task by id, including files, linked requirement title/spec_json when present, and GitHub link if present."),
 			mcp.WithString("repo_key", mcp.Description("Optional: owner/repo (defaults to DEFAULT_REPO_KEY env var)")),
 			mcp.WithString("task_id", mcp.Required(), mcp.Description("Task UUID")),
 		),

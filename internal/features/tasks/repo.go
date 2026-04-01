@@ -19,22 +19,26 @@ func NewRepo(db *sql.DB) *Repo {
 }
 
 type TaskRow struct {
-	ID            uuid.UUID
-	RequirementID *uuid.UUID
-	EpicID        *uuid.UUID
-	Title         string
-	Description   string
-	Status        string
-	Priority      int
+	ID               uuid.UUID
+	RequirementID    *uuid.UUID
+	EpicID           *uuid.UUID
+	Title            string
+	Description      string
+	Status           string
+	Priority         int
+	RequirementTitle sql.NullString
+	SpecJSON         []byte
 }
 
 const (
 	qGetNextTodo = `
-SELECT id, title, description
-FROM tasks
-WHERE project_id = $1 AND status = 'todo'
-ORDER BY priority ASC, id ASC
-FOR UPDATE SKIP LOCKED
+SELECT t.id, t.title, t.description, t.requirement_id,
+       req.title AS requirement_title, req.spec_json
+FROM tasks t
+LEFT JOIN requirements req ON req.project_id = t.project_id AND req.id = t.requirement_id
+WHERE t.project_id = $1 AND t.status = 'todo'
+ORDER BY t.priority ASC, t.id ASC
+FOR UPDATE OF t SKIP LOCKED
 LIMIT 1
 `
 	qSetTaskInProgress = `UPDATE tasks SET status = 'in_progress' WHERE project_id = $1 AND id = $2`
@@ -54,12 +58,20 @@ func (r *Repo) GetNextTodoAndLock(ctx context.Context, projectID uuid.UUID) (Tas
 	defer func() { _ = tx.Rollback() }()
 
 	var row TaskRow
-	err = tx.QueryRowContext(ctx, qGetNextTodo, projectID).Scan(&row.ID, &row.Title, &row.Description)
+	var reqID sql.Null[uuid.UUID]
+	err = tx.QueryRowContext(ctx, qGetNextTodo, projectID).Scan(
+		&row.ID, &row.Title, &row.Description, &reqID,
+		&row.RequirementTitle, &row.SpecJSON,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return TaskRow{}, nil, false, nil
 		}
 		return TaskRow{}, nil, false, fmt.Errorf("scan next task: %w", err)
+	}
+	if reqID.Valid {
+		v := reqID.V
+		row.RequirementID = &v
 	}
 
 	if _, err := tx.ExecContext(ctx, qSetTaskInProgress, projectID, row.ID); err != nil {
@@ -132,13 +144,14 @@ WHERE NOT EXISTS (
 }
 
 type ListOptions struct {
-	ProjectID     uuid.UUID
-	Status        string
-	RequirementID *uuid.UUID
-	EpicID        *uuid.UUID
-	Limit         int
-	Offset        int
-	Order         string
+	ProjectID              uuid.UUID
+	Status                 string
+	RequirementID        *uuid.UUID
+	EpicID                 *uuid.UUID
+	Limit                  int
+	Offset                 int
+	Order                  string
+	IncludeRequirementSpec bool
 }
 
 func (r *Repo) List(ctx context.Context, opt ListOptions) ([]TaskRow, error) {
@@ -147,29 +160,37 @@ func (r *Repo) List(ctx context.Context, opt ListOptions) ([]TaskRow, error) {
 		where []string
 	)
 	args = append(args, opt.ProjectID)
-	where = append(where, fmt.Sprintf("project_id = $%d", len(args)))
+	where = append(where, fmt.Sprintf("t.project_id = $%d", len(args)))
 	if opt.Status != "" {
 		args = append(args, opt.Status)
-		where = append(where, fmt.Sprintf("status = $%d", len(args)))
+		where = append(where, fmt.Sprintf("t.status = $%d", len(args)))
 	}
 	if opt.RequirementID != nil {
 		args = append(args, *opt.RequirementID)
-		where = append(where, fmt.Sprintf("requirement_id = $%d", len(args)))
+		where = append(where, fmt.Sprintf("t.requirement_id = $%d", len(args)))
 	}
 	if opt.EpicID != nil {
 		args = append(args, *opt.EpicID)
-		where = append(where, fmt.Sprintf("epic_id = $%d", len(args)))
+		where = append(where, fmt.Sprintf("t.epic_id = $%d", len(args)))
 	}
 
-	orderBy := "priority ASC, id ASC"
+	orderBy := "t.priority ASC, t.id ASC"
 	if opt.Order == "created_at" {
-		orderBy = "created_at ASC, id ASC"
+		orderBy = "t.created_at ASC, t.id ASC"
 	}
 
 	query := `
-SELECT id, requirement_id, epic_id, title, description, status, priority
-FROM tasks
+SELECT t.id, t.requirement_id, t.epic_id, t.title, t.description, t.status, t.priority
+FROM tasks t
 `
+	if opt.IncludeRequirementSpec {
+		query = `
+SELECT t.id, t.requirement_id, t.epic_id, t.title, t.description, t.status, t.priority,
+       req.title AS requirement_title, req.spec_json
+FROM tasks t
+LEFT JOIN requirements req ON req.project_id = t.project_id AND req.id = t.requirement_id
+`
+	}
 	if len(where) > 0 {
 		query += "WHERE " + joinAnd(where) + "\n"
 	}
@@ -196,16 +217,26 @@ FROM tasks
 			desc          sql.NullString
 			status        string
 			priority      int
+			reqTitle      sql.NullString
+			specJSON      []byte
 		)
-		if err := rows.Scan(&id, &reqID, &epID, &title, &desc, &status, &priority); err != nil {
-			return nil, fmt.Errorf("scan task: %w", err)
+		var errScan error
+		if opt.IncludeRequirementSpec {
+			errScan = rows.Scan(&id, &reqID, &epID, &title, &desc, &status, &priority, &reqTitle, &specJSON)
+		} else {
+			errScan = rows.Scan(&id, &reqID, &epID, &title, &desc, &status, &priority)
+		}
+		if errScan != nil {
+			return nil, fmt.Errorf("scan task: %w", errScan)
 		}
 		tr := TaskRow{
-			ID:          id,
-			Title:       title,
-			Description: desc.String,
-			Status:      status,
-			Priority:    priority,
+			ID:               id,
+			Title:            title,
+			Description:      desc.String,
+			Status:           status,
+			Priority:         priority,
+			RequirementTitle: reqTitle,
+			SpecJSON:         specJSON,
 		}
 		if reqID.Valid {
 			v := reqID.V
@@ -232,23 +263,29 @@ func (r *Repo) Get(ctx context.Context, projectID uuid.UUID, taskID uuid.UUID) (
 		status   string
 		priority int
 	)
+	var reqTitle sql.NullString
+	var specJSON []byte
 	row := r.db.QueryRowContext(ctx, `
-SELECT requirement_id, epic_id, title, description, status, priority
-FROM tasks
-WHERE project_id = $1 AND id = $2
+SELECT t.requirement_id, t.epic_id, t.title, t.description, t.status, t.priority,
+       req.title AS requirement_title, req.spec_json
+FROM tasks t
+LEFT JOIN requirements req ON req.project_id = t.project_id AND req.id = t.requirement_id
+WHERE t.project_id = $1 AND t.id = $2
 `, projectID, taskID)
-	if err := row.Scan(&reqID, &epID, &title, &desc, &status, &priority); err != nil {
+	if err := row.Scan(&reqID, &epID, &title, &desc, &status, &priority, &reqTitle, &specJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return TaskRow{}, false, nil
 		}
 		return TaskRow{}, false, fmt.Errorf("query task: %w", err)
 	}
 	tr := TaskRow{
-		ID:          taskID,
-		Title:       title,
-		Description: desc.String,
-		Status:      status,
-		Priority:    priority,
+		ID:               taskID,
+		Title:            title,
+		Description:      desc.String,
+		Status:           status,
+		Priority:         priority,
+		RequirementTitle: reqTitle,
+		SpecJSON:         specJSON,
 	}
 	if reqID.Valid {
 		v := reqID.V

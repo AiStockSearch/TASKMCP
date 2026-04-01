@@ -31,7 +31,7 @@ tags:
 
 Реализовать отдельный MCP Server на Go (“Vault Bridge”), работающий по **stdio transport**, который подключается к Postgres по `DATABASE_URL` и предоставляет tools:
 
-- `get_next_task`: внутри транзакции выбирает одну задачу `status='todo'` с минимальным `priority`, используя `FOR UPDATE SKIP LOCKED`, переводит задачу в `in_progress`, возвращает структурированный ответ с `file_paths`.
+- `get_next_task`: внутри транзакции выбирает одну задачу `status='todo'` с минимальным `priority`, используя `FOR UPDATE OF t SKIP LOCKED` (блокируется только строка `tasks`), переводит задачу в `in_progress`, возвращает структурированный ответ с `file_paths` и, при `requirement_id`, полями `requirement_title` / `spec_json` из `requirements`.
 - `complete_task`: строго завершает только `in_progress` задачу, переводит в `done`, дописывает Execution Report в `description`.
 - `add_context_file`: идемпотентно добавляет связку `(task_id, file_path)` в `task_files`.
 
@@ -76,7 +76,7 @@ tags:
   - Простая модель владения: одна бинарь + `DATABASE_URL`.
   - Минимальный surface area для отказов.
 - **Минусы**:
-  - Добавление новых возможностей (например, чтение `requirements.spec_json`, поиск/фильтрация задач, heartbeat) потребует расширения набора tools и договорённости о контракте.
+  - Дальнейшие возможности (отдельный `get_requirement`, heartbeat, и т.д.) по-прежнему расширяют контракт tools; `spec_json` для исполнителя уже отдаётся в `get_next_task` / `get_task` при связанной задаче.
   - Идемпотентность `add_context_file` лучше фиксировать ограничением UNIQUE в БД (опциональное улучшение).
 
 ## Примечания по данным и миграциям (рекомендации)
